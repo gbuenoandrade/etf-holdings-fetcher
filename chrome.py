@@ -39,18 +39,11 @@ class ChromeDriver(object):
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector)))
             if len(found) >= count:
                 return
-        raise ElementsNotFoundError(f'Could not find {count} instances of "{selector}"')
+        raise ElementsNotFoundError(
+            f'Could not find {count} instances of "{selector}"')
 
     def source(self) -> str:
         return self._driver.page_source
-
-    @staticmethod
-    def click_until_stale(element) -> None:
-        while True:
-            try:
-                element.click()
-            except StaleElementReferenceException:
-                break
 
 
 class ElementsNotFoundError(Exception):

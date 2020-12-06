@@ -1,4 +1,5 @@
 from __future__ import annotations
+from abc import ABC, abstractmethod
 
 import datetime
 from chrome import ChromeDriver
@@ -9,14 +10,27 @@ PCF_TEMPLATE = 'https://investor.vanguard.com/etf/profile/portfolio/%s/pcf'
 OVERVIEW_TEMPLATE = 'https://investor.vanguard.com/etf/profile/overview/%s'
 
 
-class VanguardFetcher(object):
-    def __init__(self, driver: ChromeDriver, html_parser: HTMLParser, ticker: str):
+class ETFFetcher(ABC):
+    @abstractmethod
+    def holdings(self) -> Holdings:
+        pass
+
+    @abstractmethod
+    def nav(self) -> float:
+        pass
+
+    @abstractmethod
+    def quit(self) -> None:
+        pass
+
+
+class VanguardETFFetcher(ETFFetcher):
+    def __init__(self, driver: ChromeDriver, html_parser: HTMLParser):
         self._driver = driver
         self._html_parser = html_parser
-        self.ticker = ticker
 
-    def holdings(self) -> Holdings:
-        url = PCF_TEMPLATE % self.ticker
+    def holdings(self, ticker: str) -> Holdings:
+        url = PCF_TEMPLATE % ticker
         self._driver.load(url)
         self._expand_page()
         self._parse_source()
@@ -49,24 +63,26 @@ class VanguardFetcher(object):
         return elements
 
     @staticmethod
-    def _parse_holding_elements(holding_elements: List[Element]) -> List[Holding]:
+    def _parse_holding_elements(holding_elements: List[Element]) -> List[Holdings.Entry]:
         holdings = []
         for holding_element in holding_elements:
             elements = holding_element.find_all('td', {'class': 'ng-binding'})
             ticker = elements[0].content().replace('.', '-')
             sharesText = elements[2].content().replace(',', '')
             shares = int(sharesText)
-            holdings.append(Holding(ticker, shares))
+            holdings.append(Holdings.Entry(ticker, shares))
         return holdings
 
-    def nav(self) -> float:
-        url = OVERVIEW_TEMPLATE % self.ticker
+    def nav(self, ticker: str) -> float:
+        url = OVERVIEW_TEMPLATE % ticker
         self._driver.load(url)
         selector = 'span[class="ng-scope ng-binding sceIsLayer arrange arrangeSec"'
         self._driver.wait(selector, count=5)
-
         self._parse_source()
 
+        return self._parse_nav()
+
+    def _parse_nav(self) -> float:
         elements = self._html_parser.find_all(
             'span', {'class': 'ng-scope ng-binding sceIsLayer arrange arrangeSec'})
         nav = elements[4].content()[1:]
@@ -77,22 +93,20 @@ class VanguardFetcher(object):
 
 
 class Holdings(object):
-    def __init__(self, date: datetime.datetime, holdings: List[Holding]):
+    class Entry(object):
+        def __init__(self, ticker: str, shares: int):
+            self.ticker = ticker
+            self.shares = shares
+
+        def __repr__(self):
+            return f'(Ticker: {self.ticker}, Shares: {self.shares})'
+
+    def __init__(self, date: datetime.datetime, entries: List[Entry]):
         self.date = date
-        self.holdings = holdings
+        self.entries = entries
 
     def __repr__(self):
         repr = f'As of {self.date}:\n'
         repr += '\n'.join(f'{idx+1} - {h}' for idx,
-                          h in enumerate(self.holdings))
+                          h in enumerate(self.entries))
         return repr
-
-
-class Holding(object):
-    def __init__(self, ticker: str, shares: int):
-        self.ticker = ticker
-        self.shares = shares
-
-    def __repr__(self):
-        return f'(Ticker: {self.ticker}, Shares: {self.shares})'
-
